@@ -10,7 +10,7 @@ from security import hash_password, verify_password, make_token, require_auth
 
 app=Flask(__name__); app.config['SECRET_KEY']=os.getenv('SECRET_KEY','dev'); app.config['SQLALCHEMY_DATABASE_URI']=os.getenv('DATABASE_URL','sqlite:///nodo.db'); app.config['SQLALCHEMY_TRACK_MODIFICATIONS']=False
 CORS(app, resources={r'/api/*': {'origins': os.getenv('CLIENT_ORIGIN','*')}})
-socketio=SocketIO(app, cors_allowed_origins='*', async_mode='eventlet'); db.init_app(app)
+socketio=SocketIO(app, cors_allowed_origins='*', async_mode='threading'); db.init_app(app)
 def user_public(u): return {'id':u.id,'username':u.username,'email':u.email,'phone':u.phone,'bio':u.bio,'avatar':u.avatar,'xp':u.xp,'level':u.level}
 @app.get('/api/health')
 def health(): return {'ok':True}
