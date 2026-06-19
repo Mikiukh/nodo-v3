@@ -144,21 +144,8 @@ def ensure_db_ready_once():
 # ---------- seed ----------
 
 def seed_if_empty():
-    admin_email = (os.getenv('ADMIN_EMAIL') or 'demo@nodo.com').lower()
-    if not User.query.filter_by(email=admin_email).first():
-        demo = User(
-            username='Demo Nodo',
-            email=admin_email,
-            password_hash=hash_password('12345678'),
-            avatar='🚀',
-            bio='Conta de teste/admin da Nodo.',
-            xp=320,
-            level=3,
-            nodo_coins=140,
-            streak=3,
-            is_admin=True,
-        )
-        db.session.add(demo)
+    # Segurança: não criar conta demo/admin automaticamente.
+    # Usuários reais devem ser criados apenas pelo cadastro normal.
     if Mission.query.count() == 0:
         db.session.add_all([
             Mission(title='Primeiro script Python', description='Explique como criaria um script Python que imprime uma mensagem no terminal.', category='Python', difficulty='iniciante', xp_reward=50, coin_reward=12),
@@ -216,7 +203,12 @@ def register():
 @app.post('/api/auth/login')
 def login():
     d = request.json or {}
-    u = User.query.filter_by(email=(d.get('email') or '').strip().lower()).first()
+    email = (d.get('email') or '').strip().lower()
+
+    if email == 'demo@nodo.com':
+        return jsonify({'error': 'Conta demo desativada. Crie sua própria conta.'}), 403
+
+    u = User.query.filter_by(email=email).first()
     if not u or not verify_password(d.get('password') or '', u.password_hash):
         return jsonify({'error': 'Email ou senha inválidos'}), 401
     return {'token': make_token(u.id), 'user': user_private(u)}
