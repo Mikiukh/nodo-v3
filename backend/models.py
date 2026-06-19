@@ -21,7 +21,7 @@ class User(db.Model):
     avatar = db.Column(db.Text, default='👨‍💻')
     xp = db.Column(db.Integer, default=0)
     level = db.Column(db.Integer, default=1)
-    nodo_coins = db.Column(db.Integer, default=25)
+    nodo_coins = db.Column(db.Integer, default=5)
     streak = db.Column(db.Integer, default=0)
     last_streak_date = db.Column(db.Date, nullable=True)
     is_admin = db.Column(db.Boolean, default=False)
@@ -70,7 +70,7 @@ class Mission(db.Model):
     category = db.Column(db.String(80), default='Programação')
     difficulty = db.Column(db.String(30), default='iniciante')
     xp_reward = db.Column(db.Integer, default=50)
-    coin_reward = db.Column(db.Integer, default=10)
+    coin_reward = db.Column(db.Integer, default=1)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

@@ -96,6 +96,24 @@ def touch_streak(u: User):
     return True
 
 
+def admin_email_set():
+    raw = os.getenv('ADMIN_EMAILS') or os.getenv('ADMIN_EMAIL') or 'pedwyz73@gmail.com'
+    return {email.strip().lower() for email in raw.split(',') if email.strip()}
+
+
+def is_admin_email(email: str) -> bool:
+    return (email or '').strip().lower() in admin_email_set()
+
+
+def sync_admin_flag(u: User):
+    # Mantém a conta dona como admin sem salvar senha no código.
+    if u and is_admin_email(u.email) and not u.is_admin:
+        u.is_admin = True
+        db.session.add(u)
+        db.session.commit()
+    return u
+
+
 # ---------- lightweight migration for SQLite/dev upgrades ----------
 
 def run_light_migrations():
@@ -111,7 +129,7 @@ def run_light_migrations():
     conn = db.engine.connect()
     cols = {row[1] for row in conn.execute(text('PRAGMA table_info(user)')).fetchall()}
     additions = {
-        'nodo_coins': 'INTEGER DEFAULT 25',
+        'nodo_coins': 'INTEGER DEFAULT 5',
         'streak': 'INTEGER DEFAULT 0',
         'last_streak_date': 'DATE',
         'is_admin': 'BOOLEAN DEFAULT 0',
@@ -122,7 +140,7 @@ def run_light_migrations():
     mcols = {row[1] for row in conn.execute(text('PRAGMA table_info(mission)')).fetchall()}
     mission_additions = {
         'difficulty': "VARCHAR(30) DEFAULT 'iniciante'",
-        'coin_reward': 'INTEGER DEFAULT 10',
+        'coin_reward': 'INTEGER DEFAULT 1',
         'created_at': 'DATETIME',
     }
     for col, definition in mission_additions.items():
@@ -144,16 +162,16 @@ def ensure_db_ready_once():
 # ---------- seed ----------
 
 def seed_if_empty():
-    # Segurança: não criar conta demo/admin automaticamente.
-    # Usuários reais devem ser criados apenas pelo cadastro normal.
+    # Não cria conta demo/admin automaticamente.
+    # Admin é controlado por ADMIN_EMAILS no Render ou pelo e-mail dono configurado.
     if Mission.query.count() == 0:
         db.session.add_all([
-            Mission(title='Primeiro script Python', description='Explique como criaria um script Python que imprime uma mensagem no terminal.', category='Python', difficulty='iniciante', xp_reward=50, coin_reward=12),
-            Mission(title='Página HTML pessoal', description='Explique quais tags HTML usaria para criar uma página com nome, descrição e links.', category='Web', difficulty='iniciante', xp_reward=70, coin_reward=16),
-            Mission(title='Segurança de conta', description='Explique pelo menos 5 formas de proteger uma conta online contra invasões.', category='Cyber ético', difficulty='iniciante', xp_reward=80, coin_reward=18),
-            Mission(title='GitHub básico', description='Explique o passo a passo para criar um repositório e enviar um projeto usando Git.', category='Dev', difficulty='iniciante', xp_reward=90, coin_reward=20),
-            Mission(title='XSS na defesa', description='Explique o que é XSS e como um desenvolvedor pode prevenir esse tipo de falha.', category='Cyber ético', difficulty='intermediário', xp_reward=100, coin_reward=24),
-            Mission(title='API sem login', description='Explique como identificar se uma rota deveria exigir autenticação, sem tentar burlar login.', category='API', difficulty='intermediário', xp_reward=110, coin_reward=26),
+            Mission(title='Primeiro script Python', description='Explique como criaria um script Python que imprime uma mensagem no terminal.', category='Python', difficulty='iniciante', xp_reward=35, coin_reward=1),
+            Mission(title='Página HTML pessoal', description='Explique quais tags HTML usaria para criar uma página com nome, descrição e links.', category='Web', difficulty='iniciante', xp_reward=45, coin_reward=1),
+            Mission(title='Segurança de conta', description='Explique pelo menos 5 formas de proteger uma conta online contra invasões.', category='Cyber ético', difficulty='iniciante', xp_reward=55, coin_reward=2),
+            Mission(title='GitHub básico', description='Explique o passo a passo para criar um repositório e enviar um projeto usando Git.', category='Dev', difficulty='iniciante', xp_reward=60, coin_reward=2),
+            Mission(title='XSS na defesa', description='Explique o que é XSS e como um desenvolvedor pode prevenir esse tipo de falha.', category='Cyber ético', difficulty='intermediário', xp_reward=75, coin_reward=3),
+            Mission(title='API sem login', description='Explique como identificar se uma rota deveria exigir autenticação, sem tentar burlar login.', category='API', difficulty='intermediário', xp_reward=85, coin_reward=3),
         ])
     if Course.query.count() == 0:
         db.session.add_all([
@@ -164,10 +182,12 @@ def seed_if_empty():
         ])
     if StoreItem.query.count() == 0:
         db.session.add_all([
-            StoreItem(name='Avatar Neon', description='Cosmético para deixar o perfil com estilo cyber.', item_type='avatar', icon='🟣', price=40),
-            StoreItem(name='Badge Python', description='Selo visual para quem curte Python.', item_type='badge', icon='🐍', price=55),
-            StoreItem(name='Badge Web', description='Selo visual para perfil focado em front-end.', item_type='badge', icon='🌐', price=55),
-            StoreItem(name='Boost de Perfil', description='Item cosmético para destacar seu perfil na comunidade.', item_type='cosmetico', icon='⚡', price=85),
+            StoreItem(name='Moldura Carbon', description='Borda escura premium para destacar o perfil.', item_type='frame', icon='carbon-frame', price=25),
+            StoreItem(name='Badge Python', description='Selo de perfil para quem estuda Python.', item_type='badge', icon='python-badge', price=35),
+            StoreItem(name='Badge Web Dev', description='Selo para perfil focado em front-end e web.', item_type='badge', icon='web-badge', price=35),
+            StoreItem(name='Banner Neon', description='Banner visual estilo Nitro para o perfil.', item_type='banner', icon='neon-banner', price=60),
+            StoreItem(name='Nome Glow', description='Efeito leve de brilho no nome do perfil.', item_type='effect', icon='name-glow', price=75),
+            StoreItem(name='Perfil Pro', description='Pacote cosmético com visual premium sem vantagem competitiva.', item_type='cosmetico', icon='profile-pro', price=120),
         ])
     db.session.commit()
 
@@ -194,7 +214,7 @@ def register():
     if User.query.filter_by(email=email).first():
         return jsonify({'error': 'Email já cadastrado'}), 400
     is_first = User.query.count() == 0
-    u = User(username=username, email=email, password_hash=hash_password(password), nodo_coins=25, is_admin=is_first)
+    u = User(username=username, email=email, password_hash=hash_password(password), nodo_coins=5, is_admin=is_first or is_admin_email(email))
     db.session.add(u)
     db.session.commit()
     return {'token': make_token(u.id), 'user': user_private(u)}
@@ -211,13 +231,14 @@ def login():
     u = User.query.filter_by(email=email).first()
     if not u or not verify_password(d.get('password') or '', u.password_hash):
         return jsonify({'error': 'Email ou senha inválidos'}), 401
+    sync_admin_flag(u)
     return {'token': make_token(u.id), 'user': user_private(u)}
 
 
 @app.get('/api/me')
 @require_auth
 def me():
-    return {'user': user_private(User.query.get_or_404(request.user_id))}
+    return {'user': user_private(sync_admin_flag(User.query.get_or_404(request.user_id)))}
 
 
 @app.put('/api/me')
@@ -243,6 +264,7 @@ def update_me():
             return jsonify({'error': 'Imagem muito pesada'}), 400
         u.avatar = av
     db.session.commit()
+    sync_admin_flag(u)
     return {'user': user_private(u)}
 
 
@@ -290,10 +312,10 @@ def streak_checkin():
     if not touch_streak(u):
         return {'message': 'Check-in de hoje já foi feito.', 'user': user_private(u)}
     u.xp = (u.xp or 0) + 20
-    u.nodo_coins = (u.nodo_coins or 0) + 8
+    u.nodo_coins = (u.nodo_coins or 0) + 1
     u.level = level_from_xp(u.xp)
     db.session.commit()
-    return {'message': 'Check-in feito. +20 XP e +8 Nodo Coins.', 'user': user_private(u)}
+    return {'message': 'Check-in feito. +20 XP e +1 Nodo Coin.', 'user': user_private(u)}
 
 
 @app.get('/api/ranking')
@@ -523,7 +545,7 @@ def admin_create_mission():
         category=(d.get('category') or 'Programação')[:80],
         difficulty=(d.get('difficulty') or 'iniciante')[:30],
         xp_reward=int(d.get('xp_reward') or 50),
-        coin_reward=int(d.get('coin_reward') or 10),
+        coin_reward=max(0, min(int(d.get('coin_reward') or 1), 5)),
     )
     db.session.add(m)
     db.session.commit()
@@ -559,6 +581,26 @@ def chat_history():
     ms.reverse()
     return {'messages': [{'id': m.id, 'room': m.room, 'content': m.content, 'username': m.username, 'user_id': m.user_id, 'created_at': m.created_at.isoformat()} for m in ms]}
 
+
+
+@app.post('/api/chat/message')
+@require_auth
+def chat_send_message():
+    d = request.json or {}
+    room = (d.get('room') or 'global')[:120]
+    content = (d.get('content') or '').strip()
+    if len(content) < 1:
+        return jsonify({'error': 'Mensagem vazia'}), 400
+    u = User.query.get_or_404(request.user_id)
+    msg = ChatMessage(room=room, content=content[:1000], username=u.username, user_id=u.id)
+    db.session.add(msg)
+    db.session.commit()
+    payload = {'id': msg.id, 'room': msg.room, 'content': msg.content, 'username': msg.username, 'user_id': msg.user_id, 'created_at': msg.created_at.isoformat()}
+    try:
+        socketio.emit('message', payload, to=room)
+    except Exception:
+        pass
+    return {'message': payload}
 
 @app.post('/api/ai')
 @require_auth
