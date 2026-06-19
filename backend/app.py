@@ -39,8 +39,18 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 client_origin = os.getenv('CLIENT_ORIGIN', 'http://localhost:5173')
 allowed_origins = [o.strip() for o in client_origin.split(',') if o.strip()]
-CORS(app, resources={r'/api/*': {'origins': allowed_origins or ['http://localhost:5173']}})
-socketio = SocketIO(app, cors_allowed_origins=allowed_origins or ['http://localhost:5173'], async_mode='eventlet')
+CORS(
+    app,
+    resources={
+        r'/api/*': {
+            'origins': allowed_origins or ['http://localhost:5173'],
+            'methods': ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            'allow_headers': ['Content-Type', 'Authorization'],
+        }
+    },
+    supports_credentials=True,
+)
+socketio = SocketIO(app, cors_allowed_origins=allowed_origins or ['http://localhost:5173'], async_mode='threading')
 db.init_app(app)
 
 
