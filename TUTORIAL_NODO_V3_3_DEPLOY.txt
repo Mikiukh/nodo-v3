@@ -1,0 +1,117 @@
+TUTORIAL - COLOCAR NODO V3.3 NO AR
+
+1) Baixar e descompactar o ZIP
+
+Coloque o arquivo NODO-V3.3-Perfect-Customize-Admin.zip na pasta Downloads.
+Depois rode:
+
+cd ~/Downloads
+unzip NODO-V3.3-Perfect-Customize-Admin.zip
+
+Tem que aparecer a pasta:
+
+nodo-v3.3
+
+2) Conferir se seu projeto atual está limpo
+
+cd ~/Downloads/nodo-v3
+git status
+
+O ideal é aparecer:
+
+nothing to commit, working tree clean
+
+Se tiver alteração, faça commit antes de copiar a V3.3.
+
+3) Copiar a V3.3 por cima da versão atual
+
+cd ~/Downloads
+rsync -av nodo-v3.3/ nodo-v3/
+
+4) Testar o frontend
+
+cd ~/Downloads/nodo-v3/frontend
+npm install
+npm run build
+
+Tem que aparecer algo como:
+
+✓ built
+
+5) Testar o backend
+
+cd ~/Downloads/nodo-v3/backend
+python3 -m py_compile app.py models.py seed.py security.py
+
+Se não aparecer erro, está certo.
+
+6) Conferir alterações
+
+cd ~/Downloads/nodo-v3
+git status
+
+Você deve ver arquivos modificados em backend e frontend.
+
+7) Salvar no Git
+
+git add .
+git commit -m "Nodo V3.3 personalizacao admin design"
+git push origin main
+
+8) Render
+
+No Render, abra o serviço do backend.
+Vá em Environment e confirme:
+
+PYTHON_VERSION=3.11.9
+CLIENT_ORIGIN=https://nodo-v3.vercel.app
+ADMIN_EMAILS=pedwyz73@gmail.com
+
+Em Settings, confirme o Start Command:
+
+gunicorn --workers 1 --threads 100 --timeout 120 app:app
+
+Não use:
+
+python seed.py &&
+
+Depois clique:
+
+Manual Deploy > Deploy latest commit
+
+Espere aparecer Live.
+
+9) Vercel
+
+A Vercel deve fazer deploy automático depois do git push.
+Vá em Deployments e espere ficar Ready.
+
+10) Testar no site
+
+Abra:
+
+https://nodo-v3.vercel.app
+
+Use CTRL + F5.
+No celular, teste em aba anônima.
+
+Teste nesta ordem:
+
+1. Login/criar conta
+2. Logo e design
+3. Aba Admin
+4. Comunidade
+5. Chat geral
+6. Criar Nodo/grupo
+7. Chat do Nodo
+8. Loja
+9. Personalizar
+10. Comprar/equipar cosmético
+11. Perfil/ranking com visual aplicado
+
+OBSERVAÇÕES
+
+- A senha do admin não fica no código.
+- A conta vira admin pelo e-mail em ADMIN_EMAILS.
+- Se a aba Admin não aparecer, confira ADMIN_EMAILS no Render, salve, faça deploy e faça login de novo.
+- Banco SQLite no Render ainda pode perder dados em redeploy. O ideal futuro é Postgres persistente.

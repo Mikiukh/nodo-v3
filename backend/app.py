@@ -1,5 +1,7 @@
 import os
 from datetime import date, timedelta
+from functools import wraps
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,7 +10,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room
 from openai import OpenAI
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from models import (
     db,
@@ -25,6 +27,8 @@ from models import (
 )
 from security import hash_password, verify_password, make_token, decode_token, require_auth
 
+
+# ---------- app/config ----------
 
 def normalize_database_url(url: str) -> str:
     if url and url.startswith('postgres://'):
@@ -54,7 +58,22 @@ socketio = SocketIO(app, cors_allowed_origins=allowed_origins or ['http://localh
 db.init_app(app)
 
 
-# ---------- serializers ----------
+# ---------- helpers/serializers ----------
+
+def level_from_xp(xp: int) -> int:
+    return max(1, int(xp or 0) // 150 + 1)
+
+
+def cosmetic_data(u: User):
+    return {
+        'frame': getattr(u, 'equipped_frame', '') or '',
+        'banner': getattr(u, 'equipped_banner', '') or '',
+        'effect': getattr(u, 'equipped_effect', '') or '',
+        'badge': getattr(u, 'equipped_badge', '') or '',
+        'theme': getattr(u, 'equipped_theme', '') or 'theme-obsidian',
+        'nameplate': getattr(u, 'nameplate', '') or '',
+    }
+
 
 def user_public(u: User):
     return {
@@ -64,6 +83,8 @@ def user_public(u: User):
         'avatar': u.avatar or '👨‍💻',
         'xp': u.xp or 0,
         'level': u.level or 1,
+        'cosmetics': cosmetic_data(u),
+        'is_admin': bool(getattr(u, 'is_admin', False)),
     }
 
 
@@ -75,13 +96,22 @@ def user_private(u: User):
         'nodo_coins': u.nodo_coins or 0,
         'streak': u.streak or 0,
         'last_streak_date': u.last_streak_date.isoformat() if u.last_streak_date else None,
-        'is_admin': bool(u.is_admin),
     })
     return data
 
 
-def level_from_xp(xp: int) -> int:
-    return max(1, int(xp or 0) // 150 + 1)
+def store_item_payload(i: StoreItem, owned_ids=None):
+    owned_ids = owned_ids or set()
+    return {
+        'id': i.id,
+        'name': i.name,
+        'description': i.description or '',
+        'item_type': i.item_type or 'badge',
+        'icon': i.icon or 'badge-founder',
+        'rarity': i.rarity or 'comum',
+        'price': i.price or 0,
+        'owned': i.id in owned_ids,
+    }
 
 
 def touch_streak(u: User):
@@ -106,7 +136,6 @@ def is_admin_email(email: str) -> bool:
 
 
 def sync_admin_flag(u: User):
-    # Mantém a conta dona como admin sem salvar senha no código.
     if u and is_admin_email(u.email) and not u.is_admin:
         u.is_admin = True
         db.session.add(u)
@@ -114,40 +143,123 @@ def sync_admin_flag(u: User):
     return u
 
 
-# ---------- lightweight migration for SQLite/dev upgrades ----------
+def require_admin(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        u = User.query.get_or_404(request.user_id)
+        sync_admin_flag(u)
+        if not u.is_admin:
+            return jsonify({'error': 'Acesso apenas para admin'}), 403
+        return fn(*args, **kwargs)
+    return require_auth(wrapper)
+
+
+# ---------- migrations/seed ----------
+
+def add_column_if_missing(table_name, column_name, definition):
+    inspector = inspect(db.engine)
+    cols = {c['name'] for c in inspector.get_columns(table_name)}
+    if column_name in cols:
+        return
+    table_sql = '"user"' if table_name == 'user' else table_name
+    db.session.execute(text(f'ALTER TABLE {table_sql} ADD COLUMN {column_name} {definition}'))
+
 
 def run_light_migrations():
-    """Keeps V3 databases alive when V3.1 adds columns/tables.
+    """Simple safe upgrades for the current MVP.
 
-    This is not a replacement for Alembic, but it prevents the old SQLite
-    database from breaking during local/Vercel preview tests.
+    Keeps older SQLite/Postgres databases alive when V3.3 adds cosmetics/admin fields.
+    For a larger production version, replace this with Alembic migrations.
     """
     db.create_all()
-    uri = app.config['SQLALCHEMY_DATABASE_URI']
-    if not uri.startswith('sqlite'):
-        return
-    conn = db.engine.connect()
-    cols = {row[1] for row in conn.execute(text('PRAGMA table_info(user)')).fetchall()}
-    additions = {
-        'nodo_coins': 'INTEGER DEFAULT 5',
+
+    user_additions = {
+        'nodo_coins': 'INTEGER DEFAULT 2',
         'streak': 'INTEGER DEFAULT 0',
         'last_streak_date': 'DATE',
-        'is_admin': 'BOOLEAN DEFAULT 0',
+        'is_admin': 'BOOLEAN DEFAULT FALSE',
+        'equipped_frame': "VARCHAR(80) DEFAULT ''",
+        'equipped_banner': "VARCHAR(80) DEFAULT ''",
+        'equipped_effect': "VARCHAR(80) DEFAULT ''",
+        'equipped_badge': "VARCHAR(80) DEFAULT ''",
+        'equipped_theme': "VARCHAR(80) DEFAULT 'theme-obsidian'",
+        'nameplate': "VARCHAR(80) DEFAULT ''",
     }
-    for col, definition in additions.items():
-        if col not in cols:
-            conn.execute(text(f'ALTER TABLE user ADD COLUMN {col} {definition}'))
-    mcols = {row[1] for row in conn.execute(text('PRAGMA table_info(mission)')).fetchall()}
+    for col, definition in user_additions.items():
+        add_column_if_missing('user', col, definition)
+
     mission_additions = {
         'difficulty': "VARCHAR(30) DEFAULT 'iniciante'",
         'coin_reward': 'INTEGER DEFAULT 1',
-        'created_at': 'DATETIME',
+        'created_at': 'TIMESTAMP',
     }
     for col, definition in mission_additions.items():
-        if col not in mcols:
-            conn.execute(text(f'ALTER TABLE mission ADD COLUMN {col} {definition}'))
-    conn.commit()
-    conn.close()
+        add_column_if_missing('mission', col, definition)
+
+    store_additions = {
+        'rarity': "VARCHAR(30) DEFAULT 'comum'",
+    }
+    for col, definition in store_additions.items():
+        add_column_if_missing('store_item', col, definition)
+
+    db.session.commit()
+
+
+def seed_store_items():
+    cosmetics = [
+        # frame
+        {'name': 'Moldura Carbon', 'description': 'Borda escura para o avatar.', 'item_type': 'frame', 'icon': 'frame-carbon', 'rarity': 'comum', 'price': 18},
+        {'name': 'Moldura Neon', 'description': 'Borda neon para o avatar.', 'item_type': 'frame', 'icon': 'frame-neon', 'rarity': 'raro', 'price': 45},
+        {'name': 'Moldura Glitch', 'description': 'Borda com visual glitch.', 'item_type': 'frame', 'icon': 'frame-glitch', 'rarity': 'épico', 'price': 80},
+        {'name': 'Moldura Founder', 'description': 'Borda especial de fundador.', 'item_type': 'frame', 'icon': 'frame-founder', 'rarity': 'lendário', 'price': 120},
+        # banner
+        {'name': 'Banner Obsidian', 'description': 'Banner escuro para perfil.', 'item_type': 'banner', 'icon': 'banner-obsidian', 'rarity': 'comum', 'price': 20},
+        {'name': 'Banner Aurora', 'description': 'Banner com brilho suave.', 'item_type': 'banner', 'icon': 'banner-aurora', 'rarity': 'raro', 'price': 50},
+        {'name': 'Banner Cyber', 'description': 'Banner estilo cyber.', 'item_type': 'banner', 'icon': 'banner-cyber', 'rarity': 'épico', 'price': 90},
+        # effect
+        {'name': 'Efeito Glow', 'description': 'Brilho leve no perfil.', 'item_type': 'effect', 'icon': 'effect-glow', 'rarity': 'raro', 'price': 55},
+        {'name': 'Efeito Code Rain', 'description': 'Detalhe visual de código.', 'item_type': 'effect', 'icon': 'effect-code-rain', 'rarity': 'épico', 'price': 95},
+        # badge
+        {'name': 'Selo Python', 'description': 'Selo de estudos em Python.', 'item_type': 'badge', 'icon': 'badge-python', 'rarity': 'comum', 'price': 25},
+        {'name': 'Selo Web Dev', 'description': 'Selo de desenvolvimento web.', 'item_type': 'badge', 'icon': 'badge-web', 'rarity': 'comum', 'price': 25},
+        {'name': 'Selo Beta', 'description': 'Selo de testador beta.', 'item_type': 'badge', 'icon': 'badge-beta', 'rarity': 'raro', 'price': 45},
+        {'name': 'Selo Founder', 'description': 'Selo especial de fundador.', 'item_type': 'badge', 'icon': 'badge-founder', 'rarity': 'lendário', 'price': 140},
+        # nameplate/theme
+        {'name': 'Nome Glow', 'description': 'Placa com brilho no nome.', 'item_type': 'nameplate', 'icon': 'nameplate-glow', 'rarity': 'raro', 'price': 60},
+        {'name': 'Nome Cyber', 'description': 'Placa cyber para o nome.', 'item_type': 'nameplate', 'icon': 'nameplate-cyber', 'rarity': 'épico', 'price': 100},
+        {'name': 'Tema Obsidian', 'description': 'Tema escuro do perfil.', 'item_type': 'theme', 'icon': 'theme-obsidian', 'rarity': 'comum', 'price': 0},
+        {'name': 'Tema Midnight', 'description': 'Tema premium escuro.', 'item_type': 'theme', 'icon': 'theme-midnight', 'rarity': 'raro', 'price': 35},
+        {'name': 'Tema Aurora', 'description': 'Tema com contraste suave.', 'item_type': 'theme', 'icon': 'theme-aurora', 'rarity': 'épico', 'price': 85},
+    ]
+    for data in cosmetics:
+        item = StoreItem.query.filter_by(icon=data['icon']).first()
+        if not item:
+            db.session.add(StoreItem(**data))
+        else:
+            # Mantém o catálogo limpo mesmo após upgrades antigos.
+            for k, v in data.items():
+                setattr(item, k, v)
+
+
+def seed_if_empty():
+    if Mission.query.count() == 0:
+        db.session.add_all([
+            Mission(title='Primeiro script Python', description='Explique como criaria um script Python que imprime uma mensagem no terminal.', category='Python', difficulty='iniciante', xp_reward=30, coin_reward=1),
+            Mission(title='Página HTML pessoal', description='Explique quais tags HTML usaria para criar uma página com nome, descrição e links.', category='Web', difficulty='iniciante', xp_reward=35, coin_reward=1),
+            Mission(title='GitHub básico', description='Explique o passo a passo para criar um repositório e enviar um projeto usando Git.', category='Dev', difficulty='iniciante', xp_reward=45, coin_reward=1),
+            Mission(title='Segurança de conta', description='Explique pelo menos 5 formas de proteger uma conta online.', category='Cyber ético', difficulty='iniciante', xp_reward=50, coin_reward=1),
+            Mission(title='XSS na defesa', description='Explique o que é XSS e como um desenvolvedor pode prevenir esse tipo de falha.', category='Cyber ético', difficulty='intermediário', xp_reward=65, coin_reward=2),
+            Mission(title='API protegida', description='Explique por que uma rota privada deve exigir autenticação.', category='API', difficulty='intermediário', xp_reward=75, coin_reward=2),
+        ])
+    if Course.query.count() == 0:
+        db.session.add_all([
+            Course(title='Fundamentos de Programação', description='Lógica, variáveis, funções, listas e pequenos projetos.', category='Programação', level='iniciante'),
+            Course(title='Web do Zero', description='HTML, CSS, JavaScript e deploy de páginas simples.', category='Web', level='iniciante'),
+            Course(title='Python para Projetos', description='Scripts, arquivos, APIs e automações úteis.', category='Python', level='intermediário'),
+            Course(title='Cyber Ético para Devs', description='Autenticação, headers, APIs e boas práticas.', category='Cyber ético', level='intermediário'),
+        ])
+    seed_store_items()
+    db.session.commit()
 
 
 @app.before_request
@@ -159,44 +271,11 @@ def ensure_db_ready_once():
         app._nodo_db_ready = True
 
 
-# ---------- seed ----------
-
-def seed_if_empty():
-    # Não cria conta demo/admin automaticamente.
-    # Admin é controlado por ADMIN_EMAILS no Render ou pelo e-mail dono configurado.
-    if Mission.query.count() == 0:
-        db.session.add_all([
-            Mission(title='Primeiro script Python', description='Explique como criaria um script Python que imprime uma mensagem no terminal.', category='Python', difficulty='iniciante', xp_reward=35, coin_reward=1),
-            Mission(title='Página HTML pessoal', description='Explique quais tags HTML usaria para criar uma página com nome, descrição e links.', category='Web', difficulty='iniciante', xp_reward=45, coin_reward=1),
-            Mission(title='Segurança de conta', description='Explique pelo menos 5 formas de proteger uma conta online contra invasões.', category='Cyber ético', difficulty='iniciante', xp_reward=55, coin_reward=2),
-            Mission(title='GitHub básico', description='Explique o passo a passo para criar um repositório e enviar um projeto usando Git.', category='Dev', difficulty='iniciante', xp_reward=60, coin_reward=2),
-            Mission(title='XSS na defesa', description='Explique o que é XSS e como um desenvolvedor pode prevenir esse tipo de falha.', category='Cyber ético', difficulty='intermediário', xp_reward=75, coin_reward=3),
-            Mission(title='API sem login', description='Explique como identificar se uma rota deveria exigir autenticação, sem tentar burlar login.', category='API', difficulty='intermediário', xp_reward=85, coin_reward=3),
-        ])
-    if Course.query.count() == 0:
-        db.session.add_all([
-            Course(title='Fundamentos de Programação', description='Lógica, variáveis, funções, listas e pequenos projetos.', category='Programação', level='iniciante'),
-            Course(title='Web do Zero', description='HTML, CSS, JavaScript e deploy de páginas simples.', category='Web', level='iniciante'),
-            Course(title='Python para Projetos', description='Scripts, arquivos, APIs e automações úteis.', category='Python', level='intermediário'),
-            Course(title='Cyber Ético para Devs', description='CORS, autenticação, exposição de dados, headers e boas práticas.', category='Cyber ético', level='intermediário'),
-        ])
-    if StoreItem.query.count() == 0:
-        db.session.add_all([
-            StoreItem(name='Moldura Carbon', description='Borda escura premium para destacar o perfil.', item_type='frame', icon='carbon-frame', price=25),
-            StoreItem(name='Badge Python', description='Selo de perfil para quem estuda Python.', item_type='badge', icon='python-badge', price=35),
-            StoreItem(name='Badge Web Dev', description='Selo para perfil focado em front-end e web.', item_type='badge', icon='web-badge', price=35),
-            StoreItem(name='Banner Neon', description='Banner visual estilo Nitro para o perfil.', item_type='banner', icon='neon-banner', price=60),
-            StoreItem(name='Nome Glow', description='Efeito leve de brilho no nome do perfil.', item_type='effect', icon='name-glow', price=75),
-            StoreItem(name='Perfil Pro', description='Pacote cosmético com visual premium sem vantagem competitiva.', item_type='cosmetico', icon='profile-pro', price=120),
-        ])
-    db.session.commit()
-
-
 # ---------- health/auth/profile ----------
 
 @app.get('/api/health')
 def health():
-    return {'ok': True, 'version': '3.1'}
+    return {'ok': True, 'version': '3.3'}
 
 
 @app.post('/api/auth/register')
@@ -211,10 +290,12 @@ def register():
         return jsonify({'error': 'Email inválido'}), 400
     if len(password) < 8:
         return jsonify({'error': 'Senha precisa ter pelo menos 8 caracteres'}), 400
+    if email == 'demo@nodo.com':
+        return jsonify({'error': 'Conta demo desativada. Crie sua própria conta.'}), 403
     if User.query.filter_by(email=email).first():
         return jsonify({'error': 'Email já cadastrado'}), 400
     is_first = User.query.count() == 0
-    u = User(username=username, email=email, password_hash=hash_password(password), nodo_coins=5, is_admin=is_first or is_admin_email(email))
+    u = User(username=username, email=email, password_hash=hash_password(password), nodo_coins=2, is_admin=is_first or is_admin_email(email))
     db.session.add(u)
     db.session.commit()
     return {'token': make_token(u.id), 'user': user_private(u)}
@@ -224,10 +305,8 @@ def register():
 def login():
     d = request.json or {}
     email = (d.get('email') or '').strip().lower()
-
     if email == 'demo@nodo.com':
         return jsonify({'error': 'Conta demo desativada. Crie sua própria conta.'}), 403
-
     u = User.query.filter_by(email=email).first()
     if not u or not verify_password(d.get('password') or '', u.password_hash):
         return jsonify({'error': 'Email ou senha inválidos'}), 401
@@ -282,6 +361,46 @@ def update_password():
     return {'message': 'Senha alterada'}
 
 
+@app.post('/api/me/equip')
+@require_auth
+def equip_cosmetic():
+    u = User.query.get_or_404(request.user_id)
+    d = request.json or {}
+    slot = (d.get('slot') or '').strip().lower()
+    allowed = {
+        'frame': 'equipped_frame',
+        'banner': 'equipped_banner',
+        'effect': 'equipped_effect',
+        'badge': 'equipped_badge',
+        'theme': 'equipped_theme',
+        'nameplate': 'nameplate',
+    }
+    if slot not in allowed:
+        return jsonify({'error': 'Tipo inválido'}), 400
+
+    # limpar item equipado
+    if d.get('clear'):
+        setattr(u, allowed[slot], 'theme-obsidian' if slot == 'theme' else '')
+        db.session.commit()
+        return {'message': 'Atualizado', 'user': user_private(u)}
+
+    item = None
+    if d.get('item_id'):
+        item = StoreItem.query.get(d.get('item_id'))
+    elif d.get('icon'):
+        item = StoreItem.query.filter_by(icon=(d.get('icon') or '')[:80]).first()
+    if not item:
+        return jsonify({'error': 'Item não encontrado'}), 404
+    if item.item_type != slot:
+        return jsonify({'error': 'Esse item não pertence a essa categoria'}), 400
+    owned = Purchase.query.filter_by(user_id=u.id, item_id=item.id).first()
+    if not owned and (item.price or 0) > 0:
+        return jsonify({'error': 'Você ainda não comprou esse item'}), 403
+    setattr(u, allowed[slot], item.icon)
+    db.session.commit()
+    return {'message': 'Equipado', 'user': user_private(u)}
+
+
 # ---------- dashboard/ranking/streak ----------
 
 @app.get('/api/dashboard')
@@ -311,11 +430,11 @@ def streak_checkin():
     u = User.query.get_or_404(request.user_id)
     if not touch_streak(u):
         return {'message': 'Check-in de hoje já foi feito.', 'user': user_private(u)}
-    u.xp = (u.xp or 0) + 20
+    u.xp = (u.xp or 0) + 15
     u.nodo_coins = (u.nodo_coins or 0) + 1
     u.level = level_from_xp(u.xp)
     db.session.commit()
-    return {'message': 'Check-in feito. +20 XP e +1 Nodo Coin.', 'user': user_private(u)}
+    return {'message': 'Check-in feito. +15 XP e +1 NC.', 'user': user_private(u)}
 
 
 @app.get('/api/ranking')
@@ -417,7 +536,7 @@ def join_group(gid):
     if u not in g.members:
         g.members.append(u)
         db.session.commit()
-    return {'message': 'Você entrou no nodo'}
+    return {'message': 'Você entrou no Nodo'}
 
 
 @app.get('/api/posts')
@@ -438,7 +557,7 @@ def create_post():
     return {'message': 'Publicado'}
 
 
-# ---------- missions/courses/store ----------
+# ---------- missions/courses/store/customize ----------
 
 @app.get('/api/missions')
 @require_auth
@@ -473,7 +592,7 @@ def submit_mission(mid):
     touch_streak(u)
     db.session.add(CompletedMission(user_id=u.id, mission_id=m.id, answer=ans[:1200]))
     db.session.commit()
-    return {'message': f'Resposta enviada. +{m.xp_reward} XP e +{m.coin_reward} Nodo Coins!', 'user': user_private(u)}
+    return {'message': f'+{m.xp_reward} XP e +{m.coin_reward} NC', 'user': user_private(u)}
 
 
 @app.get('/api/courses')
@@ -487,8 +606,8 @@ def courses():
 @require_auth
 def store():
     owned = {p.item_id for p in Purchase.query.filter_by(user_id=request.user_id).all()}
-    items = StoreItem.query.order_by(StoreItem.price.asc()).all()
-    return {'items': [{'id': i.id, 'name': i.name, 'description': i.description, 'item_type': i.item_type, 'icon': i.icon, 'price': i.price, 'owned': i.id in owned} for i in items]}
+    items = StoreItem.query.order_by(StoreItem.price.asc(), StoreItem.id.asc()).all()
+    return {'items': [store_item_payload(i, owned) for i in items]}
 
 
 @app.post('/api/store/<int:item_id>/purchase')
@@ -499,24 +618,14 @@ def purchase(item_id):
     if Purchase.query.filter_by(user_id=u.id, item_id=item.id).first():
         return jsonify({'error': 'Você já tem esse item'}), 400
     if (u.nodo_coins or 0) < (item.price or 0):
-        return jsonify({'error': 'Nodo Coins insuficientes'}), 400
-    u.nodo_coins -= item.price
+        return jsonify({'error': 'NC insuficiente'}), 400
+    u.nodo_coins -= item.price or 0
     db.session.add(Purchase(user_id=u.id, item_id=item.id))
     db.session.commit()
-    return {'message': 'Item comprado!', 'user': user_private(u)}
+    return {'message': 'Comprado', 'user': user_private(u)}
 
 
 # ---------- admin ----------
-
-def require_admin(fn):
-    def wrapper(*args, **kwargs):
-        u = User.query.get_or_404(request.user_id)
-        if not u.is_admin:
-            return jsonify({'error': 'Acesso apenas para admin'}), 403
-        return fn(*args, **kwargs)
-    wrapper.__name__ = fn.__name__
-    return require_auth(wrapper)
-
 
 @app.get('/api/admin/summary')
 @require_admin
@@ -529,6 +638,49 @@ def admin_summary():
         'courses': Course.query.count(),
         'store_items': StoreItem.query.count(),
     }
+
+
+@app.get('/api/admin/overview')
+@require_admin
+def admin_overview():
+    users = User.query.order_by(User.created_at.desc()).limit(80).all()
+    posts = Post.query.order_by(Post.created_at.desc()).limit(80).all()
+    groups = Group.query.order_by(Group.created_at.desc()).limit(80).all()
+    items = StoreItem.query.order_by(StoreItem.id.desc()).limit(120).all()
+    missions_rows = Mission.query.order_by(Mission.id.desc()).limit(120).all()
+    return {
+        'summary': {
+            'users': User.query.count(),
+            'missions': Mission.query.count(),
+            'posts': Post.query.count(),
+            'groups': Group.query.count(),
+            'courses': Course.query.count(),
+            'store_items': StoreItem.query.count(),
+        },
+        'users': [user_private(sync_admin_flag(u)) for u in users],
+        'posts': [{'id': p.id, 'content': p.content, 'user': user_public(p.user), 'created_at': p.created_at.isoformat()} for p in posts],
+        'groups': [{'id': g.id, 'name': g.name, 'topic': g.topic, 'description': g.description, 'members_count': len(g.members)} for g in groups],
+        'store_items': [store_item_payload(i) for i in items],
+        'missions': [{'id': m.id, 'title': m.title, 'category': m.category, 'difficulty': m.difficulty, 'xp_reward': m.xp_reward, 'coin_reward': m.coin_reward} for m in missions_rows],
+    }
+
+
+@app.patch('/api/admin/users/<int:user_id>')
+@require_admin
+def admin_update_user(user_id):
+    u = User.query.get_or_404(user_id)
+    d = request.json or {}
+    if 'is_admin' in d:
+        u.is_admin = bool(d['is_admin']) or is_admin_email(u.email)
+    if 'nodo_coins' in d:
+        u.nodo_coins = max(0, int(d.get('nodo_coins') or 0))
+    if 'xp' in d:
+        u.xp = max(0, int(d.get('xp') or 0))
+        u.level = level_from_xp(u.xp)
+    if 'username' in d and len((d.get('username') or '').strip()) >= 3:
+        u.username = d['username'].strip()[:80]
+    db.session.commit()
+    return {'message': 'Usuário atualizado', 'user': user_private(u)}
 
 
 @app.post('/api/admin/missions')
@@ -544,12 +696,22 @@ def admin_create_mission():
         description=description[:600],
         category=(d.get('category') or 'Programação')[:80],
         difficulty=(d.get('difficulty') or 'iniciante')[:30],
-        xp_reward=int(d.get('xp_reward') or 50),
-        coin_reward=max(0, min(int(d.get('coin_reward') or 1), 5)),
+        xp_reward=max(0, min(int(d.get('xp_reward') or 30), 300)),
+        coin_reward=max(0, min(int(d.get('coin_reward') or 1), 3)),
     )
     db.session.add(m)
     db.session.commit()
     return {'message': 'Missão criada', 'mission_id': m.id}
+
+
+@app.delete('/api/admin/missions/<int:mission_id>')
+@require_admin
+def admin_delete_mission(mission_id):
+    m = Mission.query.get_or_404(mission_id)
+    CompletedMission.query.filter_by(mission_id=m.id).delete()
+    db.session.delete(m)
+    db.session.commit()
+    return {'message': 'Missão apagada'}
 
 
 @app.post('/api/admin/store')
@@ -562,13 +724,43 @@ def admin_create_store_item():
     item = StoreItem(
         name=name[:120],
         description=(d.get('description') or '')[:400],
-        item_type=(d.get('item_type') or 'cosmetico')[:50],
-        icon=(d.get('icon') or '✨')[:80],
-        price=int(d.get('price') or 50),
+        item_type=(d.get('item_type') or 'badge')[:50],
+        icon=(d.get('icon') or 'badge-founder')[:80],
+        rarity=(d.get('rarity') or 'comum')[:30],
+        price=max(0, int(d.get('price') or 25)),
     )
     db.session.add(item)
     db.session.commit()
     return {'message': 'Item criado', 'item_id': item.id}
+
+
+@app.delete('/api/admin/store/<int:item_id>')
+@require_admin
+def admin_delete_store_item(item_id):
+    item = StoreItem.query.get_or_404(item_id)
+    Purchase.query.filter_by(item_id=item.id).delete()
+    db.session.delete(item)
+    db.session.commit()
+    return {'message': 'Item apagado'}
+
+
+@app.delete('/api/admin/posts/<int:post_id>')
+@require_admin
+def admin_delete_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    db.session.delete(post)
+    db.session.commit()
+    return {'message': 'Post apagado'}
+
+
+@app.delete('/api/admin/groups/<int:group_id>')
+@require_admin
+def admin_delete_group(group_id):
+    group = Group.query.get_or_404(group_id)
+    ChatMessage.query.filter_by(room=f'group:{group.id}').delete()
+    db.session.delete(group)
+    db.session.commit()
+    return {'message': 'Nodo apagado'}
 
 
 # ---------- chat/AI ----------
@@ -580,7 +772,6 @@ def chat_history():
     ms = ChatMessage.query.filter_by(room=room).order_by(ChatMessage.created_at.desc()).limit(80).all()
     ms.reverse()
     return {'messages': [{'id': m.id, 'room': m.room, 'content': m.content, 'username': m.username, 'user_id': m.user_id, 'created_at': m.created_at.isoformat()} for m in ms]}
-
 
 
 @app.post('/api/chat/message')
@@ -602,6 +793,7 @@ def chat_send_message():
         pass
     return {'message': payload}
 
+
 @app.post('/api/ai')
 @require_auth
 def ai_chat():
@@ -610,7 +802,7 @@ def ai_chat():
     if not prompt:
         return jsonify({'error': 'Mensagem vazia'}), 400
     if not key:
-        return {'reply': 'Nodo AI ainda não está configurada. Coloque sua OPENAI_API_KEY no backend.'}
+        return {'reply': 'Nodo AI ainda não está configurada.'}
     try:
         client = OpenAI(api_key=key)
         resp = client.chat.completions.create(

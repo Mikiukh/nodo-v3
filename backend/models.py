@@ -21,10 +21,20 @@ class User(db.Model):
     avatar = db.Column(db.Text, default='👨‍💻')
     xp = db.Column(db.Integer, default=0)
     level = db.Column(db.Integer, default=1)
-    nodo_coins = db.Column(db.Integer, default=5)
+    nodo_coins = db.Column(db.Integer, default=2)
     streak = db.Column(db.Integer, default=0)
     last_streak_date = db.Column(db.Date, nullable=True)
     is_admin = db.Column(db.Boolean, default=False)
+
+    # Cosméticos equipados: inspirados em personalização moderna de perfil,
+    # mas com nomes e visual próprios da Nodo.
+    equipped_frame = db.Column(db.String(80), default='')
+    equipped_banner = db.Column(db.String(80), default='')
+    equipped_effect = db.Column(db.String(80), default='')
+    equipped_badge = db.Column(db.String(80), default='')
+    equipped_theme = db.Column(db.String(80), default='theme-obsidian')
+    nameplate = db.Column(db.String(80), default='')
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -69,7 +79,7 @@ class Mission(db.Model):
     description = db.Column(db.String(600), nullable=False)
     category = db.Column(db.String(80), default='Programação')
     difficulty = db.Column(db.String(30), default='iniciante')
-    xp_reward = db.Column(db.Integer, default=50)
+    xp_reward = db.Column(db.Integer, default=30)
     coin_reward = db.Column(db.Integer, default=1)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -95,9 +105,10 @@ class StoreItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.String(400), default='')
-    item_type = db.Column(db.String(50), default='cosmetico')
-    icon = db.Column(db.String(80), default='✨')
-    price = db.Column(db.Integer, default=50)
+    item_type = db.Column(db.String(50), default='badge')
+    icon = db.Column(db.String(80), default='badge-founder')
+    rarity = db.Column(db.String(30), default='comum')
+    price = db.Column(db.Integer, default=25)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
