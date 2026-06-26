@@ -25,9 +25,8 @@ class User(db.Model):
     streak = db.Column(db.Integer, default=0)
     last_streak_date = db.Column(db.Date, nullable=True)
     is_admin = db.Column(db.Boolean, default=False)
+    is_banned = db.Column(db.Boolean, default=False)
 
-    # Cosméticos equipados: inspirados em personalização moderna de perfil,
-    # mas com nomes e visual próprios da Nodo.
     equipped_frame = db.Column(db.String(80), default='')
     equipped_banner = db.Column(db.String(80), default='')
     equipped_effect = db.Column(db.String(80), default='')
@@ -42,7 +41,7 @@ class Friend(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     requester_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     addressee_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    status = db.Column(db.String(20), default='accepted')
+    status = db.Column(db.String(20), default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -52,6 +51,8 @@ class Group(db.Model):
     description = db.Column(db.String(400), default='')
     topic = db.Column(db.String(80), default='Programação')
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    xp = db.Column(db.Integer, default=0)
+    level = db.Column(db.Integer, default=1)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     members = db.relationship('User', secondary=group_members, backref='groups')
 
@@ -60,6 +61,23 @@ class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.String(1000), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user = db.relationship('User')
+
+
+class PostLike(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('post_id', 'user_id', name='unique_post_like'),)
+
+
+class PostComment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    content = db.Column(db.String(700), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship('User')
 
@@ -116,4 +134,54 @@ class Purchase(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     item_id = db.Column(db.Integer, db.ForeignKey('store_item.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('user_id', 'item_id', name='unique_purchase'),)
+
+
+class Achievement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(80), unique=True, nullable=False)
+    title = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.String(400), default='')
+    icon = db.Column(db.String(80), default='achievement')
+    xp_reward = db.Column(db.Integer, default=0)
+    coin_reward = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class UserAchievement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    achievement_id = db.Column(db.Integer, db.ForeignKey('achievement.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    achievement = db.relationship('Achievement')
+    __table_args__ = (db.UniqueConstraint('user_id', 'achievement_id', name='unique_user_achievement'),)
+
+
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    title = db.Column(db.String(160), nullable=False)
+    body = db.Column(db.String(400), default='')
+    kind = db.Column(db.String(50), default='info')
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Activity(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    text = db.Column(db.String(260), nullable=False)
+    kind = db.Column(db.String(50), default='activity')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user = db.relationship('User')
+
+
+class Report(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    reporter_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    target_type = db.Column(db.String(40), nullable=False)
+    target_id = db.Column(db.Integer, nullable=False)
+    reason = db.Column(db.String(400), default='')
+    status = db.Column(db.String(30), default='open')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

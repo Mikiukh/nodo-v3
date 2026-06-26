@@ -1,0 +1,60 @@
+RELATÓRIO DE REVISÃO — NODO V3.4
+
+O que foi encontrado e corrigido:
+
+1. Primeiro usuário virava admin automaticamente
+- Problema: em versões anteriores, se o banco resetasse, o primeiro usuário registrado podia virar admin.
+- Risco: qualquer pessoa poderia ganhar acesso administrativo se criasse conta primeiro em um banco novo.
+- Correção: admin agora depende do ADMIN_EMAILS no ambiente. A conta não vira admin só por ser a primeira.
+
+2. E-mail admin hardcoded como fallback
+- Problema: o backend tinha fallback direto para um e-mail específico.
+- Risco: projeto ficava menos portátil e dependia de dado fixo no código.
+- Correção: ADMIN_EMAILS deve vir do Render/.env. O .env.example mostra o formato, mas o controle real é pela variável de ambiente.
+
+3. Socket.IO aceitava mensagem anônima
+- Problema: evento de socket podia salvar mensagem como Anônimo se token fosse inválido.
+- Risco: spam e mensagens sem usuário real.
+- Correção: socket agora exige token válido para join/message.
+
+4. Login/cadastro sem limite básico
+- Problema: tentativas repetidas de login/cadastro podiam ser feitas sem freio.
+- Risco: brute force simples e spam.
+- Correção: rate limit simples em memória para login, cadastro, chat, posts, comentários, senha e IA.
+
+5. Resposta de erro da IA podia expor detalhes internos
+- Problema: endpoint da IA retornava detalhe técnico da exceção.
+- Risco: vazamento de informação interna.
+- Correção: agora retorna erro genérico.
+
+6. Ausência de headers básicos de segurança
+- Problema: respostas da API não configuravam headers como X-Frame-Options e X-Content-Type-Options.
+- Risco: superfície maior para clickjacking/sniffing.
+- Correção: adicionados headers básicos no after_request.
+
+7. Textos de entrada sem limpeza básica
+- Problema: textos eram truncados, mas não removiam caracteres de controle.
+- Risco: ruído, payloads estranhos e dados quebrados.
+- Correção: helper clean_text remove caracteres de controle e limita tamanho.
+
+8. Comunidade sem moderação
+- Problema: posts não tinham denúncia na UI/API.
+- Risco: comunidade sem controle.
+- Correção: adicionada rota de denúncias e visualização no Admin.
+
+Pontos que ainda recomendo fazer depois:
+
+1. Banco Postgres persistente
+- SQLite em hospedagem gratuita pode perder dados em redeploy/restart.
+- Recomendo migrar para Postgres antes de chamar a Nodo de produção real.
+
+2. Alembic/migrations reais
+- A versão usa migração leve para MVP.
+- Para produção séria, use Alembic.
+
+3. Rate limit distribuído
+- O rate limit atual é em memória.
+- Em produção grande, use Redis ou recurso próprio da hospedagem.
+
+4. Revisão externa
+- Eu revisei e corrigi os pontos óbvios do código disponível, mas isso não substitui uma auditoria profissional.

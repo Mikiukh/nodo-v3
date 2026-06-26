@@ -1,0 +1,91 @@
+TUTORIAL — COLOCAR NODO V3.4 NO AR
+
+PASSO 1 — DESCOMPACTAR
+cd ~/Downloads
+unzip NODO-V3.4-Discord-Social-Security.zip
+
+PASSO 2 — ENTRAR NO PROJETO ATUAL
+cd ~/Downloads/nodo-v3
+git status
+
+Se aparecer "nothing to commit, working tree clean", continue.
+Se aparecer arquivo modificado, salve ou pergunte antes de copiar.
+
+PASSO 3 — COPIAR V3.4 POR CIMA
+cd ~/Downloads
+rsync -av nodo-v3.4/ nodo-v3/
+
+PASSO 4 — TESTAR FRONTEND
+cd ~/Downloads/nodo-v3/frontend
+npm install
+npm run build
+
+Tem que aparecer: ✓ built
+
+PASSO 5 — TESTAR BACKEND
+cd ~/Downloads/nodo-v3/backend
+python3 -m py_compile app.py models.py seed.py security.py
+
+Se não aparecer erro, está ok.
+
+PASSO 6 — COMMIT
+cd ~/Downloads/nodo-v3
+git add .
+git commit -m "Nodo V3.4 Discord UI social security"
+
+PASSO 7 — PUSH
+
+git push origin main
+
+Se pedir usuário:
+Mikiukh
+
+Se pedir senha:
+cole o token do GitHub, não a senha normal.
+
+PASSO 8 — RENDER
+Render → nodo-v3-backend → Environment
+
+Configure:
+PYTHON_VERSION=3.11.9
+CLIENT_ORIGIN=https://nodo-v3.vercel.app
+ADMIN_EMAILS=pedwyz73@gmail.com
+SECRET_KEY=uma_chave_forte
+JWT_SECRET=outra_chave_forte
+
+Start Command:
+gunicorn --workers 1 --threads 100 --timeout 120 app:app
+
+Não use:
+python seed.py &&
+
+Depois:
+Manual Deploy → Deploy latest commit
+
+Espere aparecer Live.
+
+PASSO 9 — VERCEL
+Vercel → nodo-v3 → Deployments
+
+Espere o deploy da main ficar Ready.
+
+PASSO 10 — TESTE FINAL
+Abra:
+https://nodo-v3.vercel.app
+
+Aperte CTRL + F5.
+
+Teste:
+1. Login
+2. Interface estilo Discord
+3. Comunidade
+4. Curtir post
+5. Comentar post
+6. Chat geral
+7. Criar Nodo
+8. Chat do Nodo
+9. Loja
+10. Personalizar
+11. Admin
+12. Denúncias
+13. Notificações

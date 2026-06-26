@@ -1,51 +1,48 @@
-# Nodo V3.3
+# Nodo V3.4 — Discord UI + Social Core
 
-Versão focada em design limpo, personalização estilo app social, admin completo e correção dos textos públicos da interface.
+A Nodo é uma plataforma social de estudos para programação com comunidade, missões, XP, Nodo Coins, Nodos/grupos, chat, loja, personalização e painel admin.
 
-## O que mudou
+## Novidades da V3.4
 
-- Logo oficial da Nodo mantida no frontend.
-- Tela inicial mais limpa e profissional.
-- Textos públicos encurtados: nada de termos internos como backend, REST ou detalhes técnicos.
-- Nova aba **Personalizar**.
-- Personalização de perfil com preview:
-  - Moldura
-  - Banner
-  - Efeito
-  - Selo
-  - Nome
-  - Tema
-- Loja conectada com personalização.
-- Cosméticos com raridade: comum, raro, épico e lendário.
-- Nodo Coins mais controlados.
-- Admin com mais acesso:
-  - usuários
-  - posts
-  - Nodos/grupos
-  - missões
-  - loja/cosméticos
-  - dar/remover ADM
-  - ajustar XP/NC
-  - apagar posts, grupos, missões e itens da loja
-- Chat geral, chat de grupo e DM mantidos por API/polling.
-- Conta demo bloqueada.
-- Admin definido por e-mail em `ADMIN_EMAILS`.
-- Backend sem eventlet.
+- Interface reorganizada no estilo de aplicativo de comunidade, inspirada na experiência do Discord, mas com identidade própria da Nodo.
+- Barra lateral de Nodos, canais, área principal e painel de atividade.
+- Comunidade com curtidas, comentários e denúncias.
+- Amigos com pedido de amizade e DM.
+- Chat geral e chat de grupos com visual mais limpo.
+- Conquistas.
+- Notificações.
+- Feed de atividade.
+- Loja e personalização com cosméticos equipáveis.
+- Painel Admin mais forte.
+- Melhorias de segurança no backend.
 
-## Render
+## Variáveis importantes
 
-Start Command recomendado:
+No Render, configure:
+
+```env
+PYTHON_VERSION=3.11.9
+SECRET_KEY=troque_por_uma_chave_forte
+JWT_SECRET=troque_por_uma_chave_jwt_forte
+CLIENT_ORIGIN=https://nodo-v3.vercel.app
+ADMIN_EMAILS=pedwyz73@gmail.com
+OPENAI_API_KEY=
+DATABASE_URL=
+```
+
+Para produção, use Postgres em `DATABASE_URL`. SQLite funciona para testes, mas não é ideal para produção.
+
+## Start Command no Render
 
 ```bash
 gunicorn --workers 1 --threads 100 --timeout 120 app:app
 ```
 
-Variáveis importantes:
+Não use `python seed.py &&` no Start Command.
 
-```env
-PYTHON_VERSION=3.11.9
-CLIENT_ORIGIN=https://nodo-v3.vercel.app
-ADMIN_EMAILS=pedwyz73@gmail.com
+## Testes feitos na versão empacotada
+
+```bash
+python3 -m py_compile app.py models.py seed.py security.py
+npm run build
 ```
-
-Não coloque senha no código. Admin é liberado pelo e-mail da conta.
