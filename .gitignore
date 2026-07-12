@@ -1,6 +1,25 @@
+# Secrets
 backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Python
 backend/.venv/
 backend/instance/
-frontend/node_modules/
 backend/__pycache__/
+backend/**/*.pyc
+*.db
+*.sqlite
+*.sqlite3
+
+# Node
+frontend/node_modules/
 frontend/dist/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store

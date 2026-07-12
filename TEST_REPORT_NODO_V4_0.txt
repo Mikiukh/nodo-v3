@@ -1,0 +1,35 @@
+NODO V4.0 LTS — RELATÓRIO FINAL DE TESTES
+========================================
+
+RESULTADOS APROVADOS
+--------------------
+- Frontend Vite: build de produção concluído.
+- Bundle JavaScript: aproximadamente 289 KB antes de gzip e 87 KB após gzip.
+- CSS: aproximadamente 28 KB antes de gzip e 7 KB após gzip.
+- Manifesto, service worker, tela offline e ícones PWA presentes no build.
+- npm audit --omit=dev: 0 vulnerabilidades encontradas.
+- Backend: compilação Python concluída.
+- pip check: nenhuma dependência quebrada.
+- Cadastro comum: aprovado.
+- Cadastro usando e-mail reservado de ADM: bloqueado.
+- Promoção de conta ADM existente pelo ambiente: aprovada.
+- Usuário fora do Nodo lendo chat do grupo: bloqueado.
+- ADM acessando chat de Nodo para moderação: aprovado.
+- DM sem amizade: bloqueada.
+- DM após amizade aceita: aprovada.
+- Socket.IO: token inválido bloqueado, entrada autorizada e mensagem em tempo real aprovadas.
+- Token antigo após troca de senha: bloqueado.
+- Token de usuário banido: bloqueado imediatamente.
+- Produção com SECRET_KEY/JWT_SECRET ausentes ou fracas: inicialização bloqueada.
+- Produção com segredos fortes: inicialização aprovada.
+- Migração do banco SQLite da versão anterior: aprovada, preservando usuário, missão, post, compra e recompensas.
+- Health check sem detalhes internos: aprovado.
+- Bandit: nenhuma falha real de alta gravidade; dois alertas falsos positivos foram analisados e documentados.
+
+LIMITAÇÃO DO TESTE DE DEPENDÊNCIAS PYTHON
+-----------------------------------------
+O pip-audit foi executado, mas não conseguiu consultar a base pública de vulnerabilidades por falha de DNS no ambiente de criação. Portanto, não existe declaração de que todas as dependências Python estão livres de CVEs atuais.
+
+OBSERVAÇÃO
+----------
+Os fluxos principais foram testados com bancos SQLite temporários e a migração foi testada contra o esquema antigo. Depois do deploy, faça também o checklist manual do tutorial usando o domínio de produção e duas contas diferentes.

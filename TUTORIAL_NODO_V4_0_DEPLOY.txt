@@ -1,0 +1,201 @@
+NODO V4.0 LTS — TUTORIAL PARA SUBSTITUIR A VERSÃO ATUAL
+========================================================
+
+IMPORTANTE
+---------
+Faça uma etapa por vez. Não apague a pasta atual antes de criar o backup no Git.
+A V4.0 funciona com SQLite, mas para manter contas, posts e mensagens após reinícios e novos deploys, use Postgres em produção.
+
+ETAPA 1 — BAIXAR E DESCOMPACTAR
+-------------------------------
+Salve o ZIP em ~/Downloads e rode:
+
+cd ~/Downloads
+unzip NODO-V4.0-LTS.zip
+
+A pasta criada será:
+
+~/Downloads/NODO-V4.0-LTS
+
+ETAPA 2 — PROTEGER A VERSÃO ANTIGA
+----------------------------------
+Entre no projeto que já está ligado ao GitHub:
+
+cd ~/Downloads/nodo-v3
+git status
+
+O resultado precisa estar limpo. Depois crie uma tag de segurança e envie ao GitHub:
+
+git tag nodo-v3-backup-antes-v4
+git push origin nodo-v3-backup-antes-v4
+
+Essa tag permite voltar à versão anterior.
+
+ETAPA 3 — COPIAR A V4.0 PARA O REPOSITÓRIO ATUAL
+-------------------------------------------------
+Rode:
+
+rsync -av --delete \
+  --exclude='.git/' \
+  --exclude='backend/.env' \
+  --exclude='frontend/.env' \
+  --exclude='backend/instance/' \
+  ~/Downloads/NODO-V4.0-LTS/ ~/Downloads/nodo-v3/
+
+O --delete remove arquivos antigos que não existem mais na V4.0, mas preserva a pasta .git e os arquivos .env locais.
+
+ETAPA 4 — TESTAR O FRONTEND
+---------------------------
+
+cd ~/Downloads/nodo-v3/frontend
+npm install
+npm run build
+
+O resultado correto termina com:
+
+✓ built
+
+ETAPA 5 — TESTAR O BACKEND
+--------------------------
+
+cd ~/Downloads/nodo-v3/backend
+python3 -m py_compile app.py models.py security.py seed.py
+
+Se não aparecer erro, a sintaxe está correta.
+
+Opcional, em um ambiente virtual:
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m unittest discover -s tests -v
+
+ETAPA 6 — REVISAR O QUE SERÁ ENVIADO
+------------------------------------
+
+cd ~/Downloads/nodo-v3
+git status
+git diff --stat
+
+Confira se nenhum arquivo .env, banco .db ou senha aparece.
+
+ETAPA 7 — CRIAR O COMMIT
+------------------------
+
+git add .
+git commit -m "Nodo V4.0 LTS"
+git push origin main
+
+ETAPA 8 — CONFIGURAR O RENDER ANTES DO DEPLOY
+---------------------------------------------
+Abra o serviço nodo-v3-backend no Render e entre em Environment.
+
+Mantenha ou crie estas variáveis:
+
+PYTHON_VERSION=3.11.9
+CLIENT_ORIGIN=https://nodo-v3.vercel.app
+ADMIN_EMAILS=pedwyz73@gmail.com
+JWT_TTL_HOURS=168
+OPENAI_API_KEY=
+
+Gere duas chaves diferentes no Linux:
+
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+
+Rode duas vezes. Use uma em SECRET_KEY e outra em JWT_SECRET. A V4.0 bloqueia o deploy em produção se essas chaves estiverem ausentes ou tiverem menos de 32 caracteres:
+
+SECRET_KEY=<primeira chave>
+JWT_SECRET=<segunda chave>
+
+Nunca coloque essas chaves no GitHub.
+
+BANCO DE DADOS
+--------------
+O ideal é usar Postgres e colocar a URL em:
+
+DATABASE_URL=<URL interna do Postgres>
+
+Se a produção atual já usa Postgres, mantenha exatamente a mesma DATABASE_URL para preservar os dados.
+
+Se a produção atual ainda usa SQLite e existem contas ou posts importantes, não troque para um Postgres vazio sem antes planejar a migração. O código V4.0 foi testado abrindo o esquema SQLite anterior e adicionando as novas colunas sem apagar os registros testados. Mesmo assim, o armazenamento local do Render pode continuar temporário.
+
+START COMMAND
+-------------
+Deixe exatamente:
+
+gunicorn --workers 1 --threads 100 --timeout 120 app:app
+
+Não use:
+
+python seed.py &&
+
+ETAPA 9 — DEPLOY DO BACKEND
+---------------------------
+No Render:
+
+Manual Deploy → Deploy latest commit
+
+Espere aparecer:
+
+Your service is live
+
+Teste a API:
+
+https://nodo-v3-backend.onrender.com/api/health
+
+O resultado esperado é semelhante a:
+
+{"ok":true,"version":"4.0.0"}
+
+ETAPA 10 — CONFIGURAR E PUBLICAR NA VERCEL
+------------------------------------------
+No projeto da Vercel, confira o Root Directory:
+
+frontend
+
+Confira as variáveis de produção:
+
+VITE_API_URL=https://nodo-v3-backend.onrender.com
+VITE_SOCKET_URL=https://nodo-v3-backend.onrender.com
+
+Depois aguarde o deploy automático da branch main. O estado precisa ficar Ready.
+
+ETAPA 11 — TESTES OBRIGATÓRIOS NO SITE
+--------------------------------------
+Abra:
+
+https://nodo-v3.vercel.app
+
+Use Ctrl + F5 e teste nesta ordem:
+
+1. Login e cadastro comum.
+2. Conta pedwyz73@gmail.com aparece como ADM.
+3. Perfil, avatar, bio e troca de senha.
+4. Comunidade, curtida e comentário.
+5. Chat geral em duas abas ao mesmo tempo.
+6. Criar Nodo, entrar e usar o chat do Nodo.
+7. Confirmar que usuário fora do Nodo não abre o chat dele.
+8. Adicionar amigo, aceitar e abrir DM.
+9. Loja, compra e personalização.
+10. Painel ADM, banimento e logs.
+11. Instalação como PWA pelo navegador.
+12. Visual no celular.
+
+OBSERVAÇÃO SOBRE O ADM
+----------------------
+A conta com pedwyz73@gmail.com precisa já existir no banco. A V4.0 bloqueia novos cadastros usando um e-mail reservado em ADMIN_EMAILS para impedir que outra pessoa crie a conta administrativa.
+
+Se essa conta não existir, remova temporariamente ADMIN_EMAILS no Render, faça o cadastro, recoloque ADMIN_EMAILS=pedwyz73@gmail.com e faça outro deploy. Depois entre novamente.
+
+COMO VOLTAR À VERSÃO ANTIGA
+---------------------------
+Caso a V4.0 apresente um problema crítico:
+
+cd ~/Downloads/nodo-v3
+git checkout main
+git reset --hard nodo-v3-backup-antes-v4
+git push --force-with-lease origin main
+
+Depois faça Deploy latest commit no Render e redeploy na Vercel.
+
+Também é possível usar o botão Redeploy em um deployment antigo da Vercel, mas o backend deve estar em uma versão compatível.

@@ -1,6 +1,6 @@
-from app import app, run_light_migrations, seed_if_empty
+from app import app, initialize_database
+
 
 with app.app_context():
-    run_light_migrations()
-    seed_if_empty()
-    print('Banco preparado. Conta demo automática desativada.')
+    initialize_database()
+    print('Banco preparado. Nenhuma conta demo foi criada.')

@@ -1,48 +1,73 @@
-# Nodo V3.4 — Discord UI + Social Core
+# Nodo V4.0 LTS
 
-A Nodo é uma plataforma social de estudos para programação com comunidade, missões, XP, Nodo Coins, Nodos/grupos, chat, loja, personalização e painel admin.
+A Nodo é uma plataforma social de estudos para programação com comunidade, missões, XP, Nodo Coins, Nodos, chat, amigos, loja, personalização, conquistas, notificações, Nodo AI e painel ADM.
 
-## Novidades da V3.4
+## O que muda na V4.0
 
-- Interface reorganizada no estilo de aplicativo de comunidade, inspirada na experiência do Discord, mas com identidade própria da Nodo.
-- Barra lateral de Nodos, canais, área principal e painel de atividade.
-- Comunidade com curtidas, comentários e denúncias.
-- Amigos com pedido de amizade e DM.
-- Chat geral e chat de grupos com visual mais limpo.
-- Conquistas.
-- Notificações.
-- Feed de atividade.
-- Loja e personalização com cosméticos equipáveis.
-- Painel Admin mais forte.
-- Melhorias de segurança no backend.
+- Interface refeita com estrutura de aplicativo de comunidade e identidade própria da Nodo.
+- Chat em tempo real com Socket.IO e reconexão automática.
+- Autorização real para chat de Nodos e mensagens diretas.
+- Sessões revogadas após troca de senha, banimento ou alteração de permissão.
+- Conta ADM protegida por variável de ambiente e bloqueio do e-mail reservado no cadastro.
+- Painel ADM com usuários, posts, Nodos, denúncias, missões, loja e logs de ações.
+- Pesquisa global.
+- PWA instalável no celular e computador.
+- Frontend separado em `App.jsx`, `api.js`, `ui.jsx` e `main.jsx`.
+- Dependências fixadas, sem `latest`.
+- Tratamento de erros, limites de requisição e validações reforçadas.
 
-## Variáveis importantes
+## Estrutura
 
-No Render, configure:
-
-```env
-PYTHON_VERSION=3.11.9
-SECRET_KEY=troque_por_uma_chave_forte
-JWT_SECRET=troque_por_uma_chave_jwt_forte
-CLIENT_ORIGIN=https://nodo-v3.vercel.app
-ADMIN_EMAILS=pedwyz73@gmail.com
-OPENAI_API_KEY=
-DATABASE_URL=
+```text
+backend/
+  app.py
+  models.py
+  security.py
+  seed.py
+  requirements.txt
+frontend/
+  src/App.jsx
+  src/api.js
+  src/ui.jsx
+  src/main.jsx
+  src/style.css
+  public/
 ```
 
-Para produção, use Postgres em `DATABASE_URL`. SQLite funciona para testes, mas não é ideal para produção.
+## Ambiente local
 
-## Start Command no Render
+Backend:
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+python app.py
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+## Produção
+
+Leia `TUTORIAL_NODO_V4_0_DEPLOY.txt` antes de substituir a versão atual.
+
+O comando do Render continua:
 
 ```bash
 gunicorn --workers 1 --threads 100 --timeout 120 app:app
 ```
 
-Não use `python seed.py &&` no Start Command.
+Não coloque `python seed.py &&` no Start Command.
 
-## Testes feitos na versão empacotada
+## Segurança
 
-```bash
-python3 -m py_compile app.py models.py seed.py security.py
-npm run build
-```
+Leia `SECURITY_REVIEW_NODO_V4_0.txt`. Esta versão recebeu revisão e testes automatizados, mas isso não substitui auditoria profissional ou teste de invasão autorizado.

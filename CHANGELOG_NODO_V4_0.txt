@@ -1,0 +1,44 @@
+NODO V4.0 LTS — PRINCIPAIS MUDANÇAS
+===================================
+
+INTERFACE
+- Layout de aplicativo de comunidade com barra de Nodos, navegação, área central e painel lateral.
+- Novo login, dashboard, feed, chat, loja, perfil, configurações e painel ADM.
+- Navegação móvel própria.
+- Pesquisa global.
+- Estados de carregamento, erro e listas vazias.
+- Textos públicos curtos e sem detalhes técnicos.
+
+CHAT E SOCIAL
+- Socket.IO usado de verdade no frontend.
+- Reconexão automática e fallback por API.
+- Proteção de salas de grupo e DM.
+- Aceitar, recusar e remover amizade.
+- Chat do Nodo disponível somente após entrar.
+
+CONTA E SEGURANÇA
+- token_version para encerrar sessões.
+- Banimento imediato.
+- Troca segura de senha e e-mail.
+- ADM reservado e protegido.
+- Logs administrativos.
+- Produção recusa segredos fracos ou ausentes.
+- CSP, CORS e headers reforçados.
+
+ADMIN
+- Usuários, XP, Nodo Coins, ADM e banimento.
+- Posts e Nodos.
+- Denúncias com status.
+- Criação e exclusão de missões.
+- Criação e exclusão de cosméticos.
+- Histórico de ações.
+
+PWA
+- Manifesto, ícones, tela offline e service worker.
+- Instalação no PC e celular por navegadores compatíveis.
+
+CÓDIGO
+- Frontend dividido em arquivos menores.
+- Dependências fixadas.
+- Migrações leves testadas contra a base antiga, incluindo nomes reservados do SQLite.
+- Teste automatizado de segurança incluído.

@@ -1,0 +1,124 @@
+NODO V4.0 LTS — REVISÃO DE SEGURANÇA
+====================================
+
+ESCOPO
+------
+A revisão foi feita sobre o código enviado em NODO-V4-BASE-ATUAL.zip.
+Foram analisados autenticação, autorização, chat, ADM, loja, missões, dados públicos, variáveis de ambiente, dependências e frontend.
+
+FALHAS ENCONTRADAS E CORRIGIDAS
+-------------------------------
+
+1. CHAT DE DM SEM AUTORIZAÇÃO COMPLETA
+Antes: um usuário autenticado podia tentar informar manualmente uma sala no formato dm:1:2.
+Correção: o backend agora confirma que o usuário faz parte da DM e que existe amizade aceita entre as duas contas.
+
+2. CHAT DE NODO SEM VERIFICAÇÃO DE MEMBRO
+Antes: a sala group:ID era aceita sem confirmar participação.
+Correção: somente membros do Nodo ou ADM podem ler e enviar mensagens no chat do grupo.
+
+3. BANIMENTO NÃO ENCERRAVA TOKEN ANTIGO
+Antes: uma conta banida ainda podia usar um JWT emitido anteriormente até ele expirar.
+Correção: toda rota autenticada consulta a conta, verifica banimento e compara token_version.
+
+4. TROCA DE SENHA NÃO ENCERRAVA OUTRAS SESSÕES
+Antes: tokens antigos continuavam válidos após mudar a senha.
+Correção: a troca incrementa token_version e devolve um novo token. Todos os tokens antigos deixam de funcionar.
+
+5. ALTERAÇÃO DE PERMISSÃO ADM SEM REVOGAÇÃO DE SESSÃO
+Antes: mudanças de ADM ou banimento não invalidavam imediatamente sessões antigas.
+Correção: mudança de função e banimento incrementam token_version.
+
+6. E-MAIL ADMINISTRATIVO PODIA SER USADO NO CADASTRO
+Antes: o sistema podia conceder ADM pelo e-mail configurado, sem impedir que outra pessoa tentasse registrar aquele endereço primeiro.
+Correção: e-mails presentes em ADMIN_EMAILS são reservados e não podem ser cadastrados pelo formulário comum. A promoção acontece somente para uma conta que já existe no banco.
+
+7. ALTERAÇÃO DE E-MAIL FRACA
+Antes: o perfil podia alterar o e-mail sem pedir a senha atual.
+Correção: existe uma rota separada que exige a senha atual, impede e-mail reservado e revoga tokens antigos. Conta ADM não altera e-mail pela interface.
+
+8. REQUISIÇÕES DUPLICADAS EM MISSÕES E COMPRAS
+Antes: cliques ou requisições simultâneas podiam tentar conceder recompensa ou comprar o mesmo item duas vezes.
+Correção: índices únicos, transação com bloqueio e tratamento de IntegrityError.
+
+9. SOCKET.IO ACEITAVA SALA SEM A MESMA REGRA DA API
+Antes: o socket autenticava o token, mas não aplicava toda a autorização da sala.
+Correção: HTTP e Socket.IO usam a mesma função room_access.
+
+10. HEALTH CHECK EXPUNHA AVISOS INTERNOS
+Antes: /api/health mostrava detalhes sobre segredo fraco e tipo de banco.
+Correção: o endpoint agora retorna somente estado e versão.
+
+11. ARQUIVO .env.save NO PROJETO
+Antes: existia um arquivo de ambiente de exemplo fora do padrão seguro.
+Correção: removido. O .gitignore agora bloqueia .env e variantes, preservando somente .env.example.
+
+12. DEPENDÊNCIAS COM latest
+Antes: cada instalação podia baixar versões diferentes e quebrar o build.
+Correção: versões do React, Vite, Socket.IO e demais pacotes foram fixadas.
+
+13. ERROS INTERNOS SEM TRATAMENTO GLOBAL
+Antes: algumas exceções podiam gerar respostas inconsistentes.
+Correção: tratamento global devolve mensagem genérica e registra o erro no servidor.
+
+14. VALIDAÇÃO DE AVATAR E SENHA
+Antes: validações eram limitadas.
+Correção: tamanho e tipo de data URI do avatar são conferidos; senha nova deve ter entre 10 e 128 caracteres.
+
+15. CORS E HEADERS
+Correção: CORS limitado aos domínios configurados, HSTS em HTTPS, nosniff, frame deny, referrer policy, permissions policy e CSP no frontend.
+
+16. PAINEL ADM SEM RASTREABILIDADE
+Antes: ações administrativas não tinham histórico.
+Correção: criado AdminAudit para registrar mudanças, exclusões e moderação.
+
+17. SEGREDOS FRACOS PODIAM SER ACEITOS EM PRODUÇÃO
+Antes: o backend tinha valores locais de fallback para SECRET_KEY e JWT_SECRET.
+Correção: em produção, a aplicação agora recusa iniciar se as duas chaves não existirem, forem conhecidas como placeholders ou tiverem menos de 32 caracteres.
+
+18. MIGRAÇÃO DA TABELA GROUP QUEBRAVA NO SQLITE ANTIGO
+Antes: a migração montava ALTER TABLE group sem escapar o nome reservado, causando erro ao atualizar a base antiga.
+Correção: nomes de tabela e coluna agora são escapados pelo próprio dialeto do SQLAlchemy. A migração foi testada contra o esquema anterior e preservou os registros.
+
+19. TESTE AUTOMATIZADO USAVA IDS FIXOS
+Antes: o teste de amizade e DM assumia que usuários teriam IDs 1 e 2, podendo produzir resultado incorreto quando já existia ADM.
+Correção: o teste agora consulta os IDs reais pelo e-mail e valida pedido, aceite e acesso à sala correta.
+
+MELHORIAS DE ESTABILIDADE
+-------------------------
+- Chat em tempo real com reconexão e fallback pela API.
+- Migração leve adiciona as novas colunas ao banco atual.
+- pool_pre_ping para Postgres.
+- limites de requisição por IP ou usuário.
+- paginação e limites em feed e histórico de chat.
+- botão de missão e compra bloqueado durante envio.
+- estado de carregamento, erro e vazio no frontend.
+- PWA com service worker sem colocar respostas da API em cache.
+
+DECISÃO DE PRIVACIDADE
+---------------------
+O ADM controla usuários, posts, Nodos, missões, loja, denúncias e logs. Porém, o conteúdo de DMs continua acessível somente aos participantes. Isso evita que uma conta administrativa leia conversas privadas sem necessidade.
+
+LIMITAÇÕES QUE AINDA EXISTEM
+----------------------------
+1. Não há verificação de e-mail.
+2. Não há autenticação em dois fatores.
+3. O rate limit fica na memória do processo. Se o backend usar vários workers, o ideal é Redis.
+4. DMs usam HTTPS e autorização, mas não têm criptografia ponta a ponta.
+5. Upload de avatar fica salvo como texto no banco. Para muitos usuários, use armazenamento de objetos.
+6. SQLite no Render não oferece persistência confiável. Use Postgres.
+7. O token de sessão fica no localStorage. A CSP e o uso normal do React reduzem o risco de XSS, mas uma arquitetura futura mais forte pode usar cookie HttpOnly, Secure e SameSite com proteção CSRF.
+8. Esta revisão não substitui pentest profissional, análise de infraestrutura ou monitoramento em produção.
+
+TESTES EXECUTADOS
+-----------------
+- python3 -m py_compile app.py models.py security.py seed.py
+- teste automatizado de cadastro, ADM, banimento, troca de senha, DM, grupo e Socket.IO
+- teste de migração do esquema SQLite anterior
+- bloqueio de segredos fracos em produção
+- análise estática com Bandit; sem achado real de alta gravidade
+- npm run build
+- npm audit --omit=dev: 0 vulnerabilidades encontradas
+- pip check: nenhuma dependência quebrada
+
+O pip-audit não conseguiu consultar a base online de vulnerabilidades no ambiente de criação por falta de acesso de rede. Portanto, não há declaração de que toda dependência Python está livre de CVEs atuais.
